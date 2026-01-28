@@ -60,6 +60,10 @@ if(CONFIG_SOC_GECKO_HAS_RADIO)
     ${BLUETOOTH_DIR}/bgstack/ll/inc
   )
 
+  if(CONFIG_SILABS_SISDK_OPENTHREAD_EFR32)
+    add_subdirectory(protocol/openthread)
+  endif()
+
   # sl_protocol_crypto
   zephyr_library_sources_ifdef(CONFIG_SILABS_SISDK_PROTOCOL_CRYPTO
     ${SECURITY_DIR}/sl_component/sl_protocol_crypto/src/sli_radioaes_management.c
@@ -176,6 +180,7 @@ zephyr_include_directories(
 
 zephyr_compile_definitions(
   ${SILABS_DEVICE_PART_NUMBER}
+  SL_CATALOG_CLOCK_MANAGER_PRESENT=1
   SL_CODE_COMPONENT_DEVICE_PERIPHERAL=peripheral
   SL_CODE_COMPONENT_HAL_COMMON=hal_common
   SL_CODE_COMPONENT_SYSTEM=system
