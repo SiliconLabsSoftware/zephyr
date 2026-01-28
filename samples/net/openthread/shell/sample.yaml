@@ -39,3 +39,12 @@ tests:
     platform_allow:
       - esp32c6_devkitc/esp32c6/hpcore
       - esp32h2_devkitm
+  # Run with: west twister -s sample.net.openthread.shell.silabs.poc_xg24 -p xg24_rb4187c
+  # Uses overlay-ot-silabs.conf instead of prj.conf
+  # (same as west build -- -DCONF_FILE="overlay-ot-silabs.conf").
+  sample.net.openthread.shell.silabs:
+    build_only: true
+    extra_args:
+      - CONF_FILE="overlay-ot-silabs.conf"
+    platform_allow:
+      - xg24_rb4187c
