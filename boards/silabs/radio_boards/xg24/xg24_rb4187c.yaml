@@ -17,6 +17,7 @@ supported:
   - entropy
   - flash
   - gpio
+  - openthread
   - pwm
   - spi
   - uart
