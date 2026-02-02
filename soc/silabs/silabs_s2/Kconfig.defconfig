@@ -60,4 +60,76 @@ configdefault BT_LONG_WQ_STACK_SIZE
 	default 1600 if BT_ECC
 endif
 
+if SILABS_SISDK_OPENTHREAD_EFR32
+
+configdefault OPENTHREAD_MAC_SOFTWARE_CSMA_BACKOFF_ENABLE
+	default n
+
+configdefault OPENTHREAD_CSL_AUTO_SYNC
+	default y
+
+configdefault OPENTHREAD_PLATFORM_CSL_UNCERT
+	default 175 if OPENTHREAD_REFERENCE_DEVICE
+	default 20 if OPENTHREAD_FTD
+	default 12
+
+configdefault OPENTHREAD_CSL_RECEIVE_TIME_AHEAD
+	default 600
+
+configdefault OPENTHREAD_MIN_RECEIVE_ON_AFTER
+	default 0
+
+configdefault OPENTHREAD_MAC_SOFTWARE_TX_SECURITY_ENABLE
+	default n
+
+configdefault OPENTHREAD_IP6_MAX_EXT_MCAST_ADDRS
+	default 4
+
+configdefault OPENTHREAD_CSL_RECEIVER
+	default y
+
+configdefault OPENTHREAD_DNS_CLIENT
+	default y
+
+configdefault OPENTHREAD_DUA
+	default y
+
+configdefault OPENTHREAD_EXTERNAL_HEAP
+	default y
+
+configdefault OPENTHREAD_LINK_METRICS_INITIATOR
+	default y
+
+configdefault OPENTHREAD_LINK_METRICS_SUBJECT
+	default y
+
+configdefault OPENTHREAD_MAC_BEACON_PAYLOAD_PARSING
+	default y
+
+configdefault OPENTHREAD_MLR
+	default y
+
+configdefault OPENTHREAD_MULTIPLE_INSTANCE_NUM
+	default 2
+
+configdefault OPENTHREAD_NETDIAG_CLIENT
+	default y
+
+configdefault OPENTHREAD_PING_SENDER
+	default y
+
+configdefault OPENTHREAD_SLAAC
+	default y
+
+configdefault OPENTHREAD_SRP_CLIENT
+	default y
+
+configdefault OPENTHREAD_UPTIME
+	default y if OPENTHREAD_FTD || OPENTHREAD_MTD
+
+configdefault SILABS_SISDK_OPENTHREAD_CRYPTO_PSA
+	default y
+
+endif
+
 endif
