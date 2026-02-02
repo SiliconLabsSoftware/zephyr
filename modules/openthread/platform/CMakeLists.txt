@@ -2,11 +2,14 @@
 
 zephyr_library_named(openthread_platform)
 zephyr_library_sources(
-  alarm.c
   entropy.c
   misc.c
   platform.c
   )
+
+if(NOT CONFIG_SILABS_SISDK_OPENTHREAD_EFR32)
+  zephyr_library_sources(alarm.c)
+endif()
 
 if(NOT CONFIG_HDLC_RCP_IF)
   # Radio platform implementation dedicated for L2 Platform adaptation layer
