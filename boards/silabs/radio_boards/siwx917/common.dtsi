@@ -115,6 +115,18 @@
 	};
 };
 
+&ulpdma {
+	status = "okay";
+};
+
+&dma0 {
+	status = "okay";
+};
+
+&gpdma {
+	status = "okay";
+};
+
 &sysrtc0 {
 	status = "okay";
 };
