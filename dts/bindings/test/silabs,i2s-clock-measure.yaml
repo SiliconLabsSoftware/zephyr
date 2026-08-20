@@ -1,0 +1,55 @@
+# Copyright (c) 2026 Silicon Laboratories Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Optional I2S clock capture inputs for the i2s_silabs_efr32_usart Unity test image.
+
+  On EFR32xG27 the USART bit clock is measured by routing BCLK to a GPIO on the
+  expansion header (jumper). The Unity test samples edges with k_cycle_get_32().
+  LRCLK is sampled on the USART word-select pin (PC3 on RB4194A) without a jumper.
+
+  Example wiring on xG27-RB4194A (see board ``exp-header`` gpio-map):
+
+    EXP pin 8  (PC2, USART0 CLK / BCLK)  --->  EXP pin 12 (PA5, capture)
+    EXP pin 10 (PC3, USART0 CS / LRCLK) --->  EXP pin 14 (PA6, capture)
+
+compatible: "silabs,i2s-clock-measure"
+
+include: [base.yaml]
+
+properties:
+  bclk-capture-port:
+    type: int
+    required: true
+    description: GPIO port index (0 = A, 1 = B, 2 = C) for the BCLK capture input.
+
+  bclk-capture-pin:
+    type: int
+    required: true
+    description: Pin number on bclk-capture-port (0-15).
+
+  lrclk-capture-port:
+    type: int
+    required: true
+    description: GPIO port index for the LRCLK / WS capture input.
+
+  lrclk-capture-pin:
+    type: int
+    required: true
+    description: Pin number on lrclk-capture-port.
+
+  bclk-src-exp-pin:
+    type: int
+    description: Expansion-header pin number where USART BCLK is routed (doc only).
+
+  lrclk-src-exp-pin:
+    type: int
+    description: Expansion-header pin number where USART LRCLK is routed (doc only).
+
+  bclk-cap-exp-pin:
+    type: int
+    description: Expansion-header pin number of the BCLK capture GPIO (doc only).
+
+  lrclk-cap-exp-pin:
+    type: int
+    description: Expansion-header pin number of the LRCLK capture GPIO (doc only).

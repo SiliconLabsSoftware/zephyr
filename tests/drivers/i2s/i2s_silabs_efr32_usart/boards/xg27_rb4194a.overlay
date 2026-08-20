@@ -1,0 +1,89 @@
+/*
+ * xG27-RB4194A: USART0 I2S on PC0/PC1/PC2/PC3.
+ * Disables on-board flash/display nodes that conflict with USART0.
+ *
+ * silabs_cmu_clkout: MCO routing for the test-image-only clock-measurement
+ * suite. Not required by the I2S driver itself.
+ */
+
+#include <zephyr/dt-bindings/pinctrl/silabs/xg27-pinctrl.h>
+#include <zephyr/dt-bindings/dma/silabs/xg27-dma.h>
+
+&dma0 {
+	status = "okay";
+};
+
+/ {
+	aliases {
+		i2s-tx = &usart0;
+		/delete-property/ spi-flash0;
+	};
+};
+
+&pinctrl {
+	usart0_i2s_default: usart0_i2s_default {
+		group0 {
+			pins = <USART0_TX_PC0>, <USART0_CLK_PC2>, <USART0_CS_PC3>;
+			drive-push-pull;
+			output-high;
+		};
+
+		group1 {
+			pins = <USART0_RX_PC1>;
+			input-enable;
+		};
+	};
+};
+
+&mx25r80 {
+	status = "disabled";
+};
+
+&ls013b7dh03 {
+	status = "disabled";
+};
+
+&eusart0 {
+	status = "disabled";
+};
+
+&usart0 {
+	compatible = "silabs,efr32-usart-i2s";
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "okay";
+	pinctrl-0 = <&usart0_i2s_default>;
+	pinctrl-names = "default";
+	dmas = <&dma0 DMA_REQSEL_USART0TXBL>,
+	       <&dma0 DMA_REQSEL_USART0TXBLRIGHT>,
+	       <&dma0 DMA_REQSEL_USART0RXDATAV>;
+	dma-names = "txbl", "txblright", "rx";
+};
+
+/ {
+	silabs_cmu_clkout: silabs_cmu_clkout {
+		compatible = "silabs,efr32-cmu-clkout";
+		status = "okay";
+		silabs,clkout-source = "expclk";
+		silabs,clkout-prescaler = <4>;
+		silabs,clkout-gpio-port = <0>;
+		silabs,clkout-gpio-pin = <4>;
+	};
+
+	/*
+	 * Enables BCLK/LRCLK clock tests (sample PC2/PC3 in test_clock_measure.c).
+	 * No expansion-header jumpers required.
+	 */
+	i2s_clock_measure: i2s-clock-measure {
+		compatible = "silabs,i2s-clock-measure";
+		status = "okay";
+		bclk-capture-port = <0>;
+		bclk-capture-pin = <5>;
+		lrclk-capture-port = <0>;
+		lrclk-capture-pin = <6>;
+		bclk-src-exp-pin = <8>;
+		lrclk-src-exp-pin = <10>;
+		bclk-cap-exp-pin = <12>;
+		lrclk-cap-exp-pin = <14>;
+	};
+};

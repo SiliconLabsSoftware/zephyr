@@ -1,0 +1,103 @@
+/*
+ * xG27-DK2602A: USART0 is routed by default to the on-board MX25R8035F
+ * flash as SPI (PC0/PC1/PC2/PC3). This overlay disables that flash node,
+ * drops the SPI cs-gpios, and re-purposes the same pins as USART0 I2S
+ * (TX=PC0, RX=PC1, SCLK=PC2, WS/CS=PC3) for driving a TAS2505 codec.
+ */
+
+#include <zephyr/dt-bindings/pinctrl/silabs/xg27-pinctrl.h>
+#include <zephyr/dt-bindings/dma/silabs/xg27-dma.h>
+
+&dma0 {
+	status = "okay";
+};
+
+/ {
+	aliases {
+		i2s-tx = &usart0;
+	};
+};
+
+&pinctrl {
+	usart0_i2s_default: usart0_i2s_default {
+		group0 {
+			pins = <USART0_TX_PC0>, <USART0_CLK_PC2>, <USART0_CS_PB2>;
+			drive-push-pull;
+			output-high;
+		};
+
+		group1 {
+			pins = <USART0_RX_PC1>;
+			input-enable;
+		};
+	};
+};
+
+/* MX25R8035F on the thunderboard shares USART0/PC0-PC3 with I2S use. */
+/delete-node/ &mx25r80;
+
+&usart0 {
+	compatible = "silabs,efr32-usart-i2s";
+	/delete-property/ cs-gpios;
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "okay";
+	pinctrl-0 = <&usart0_i2s_default>;
+	pinctrl-names = "default";
+	dmas = <&dma0 DMA_REQSEL_USART0TXBL>,
+	       <&dma0 DMA_REQSEL_USART0TXBLRIGHT>,
+	       <&dma0 DMA_REQSEL_USART0RXDATAV>;
+	dma-names = "txbl", "txblright", "rx";
+	silabs,mclk-out = <&silabs_cmu_clkout>;
+};
+
+/*
+ * MCLK via EXPCLK prescaler. SYSCLK = HFRCODPLL = 76.8 MHz (default, untouched).
+ * MCLK = 76.8 MHz / prescaler.  prescaler = 4 -> 19.2 MHz on the pin.
+ * No DPLL retune, no SYSCLK change -> the rest of the system is unaffected.
+ */
+
+/ {
+	silabs_cmu_clkout: silabs_cmu_clkout {
+		compatible = "silabs,efr32-cmu-clkout";
+		status = "okay";
+		silabs,clkout-source = "expclk";
+		silabs,clkout-prescaler = <4>;
+		silabs,clkout-gpio-port = <1>;
+		silabs,clkout-gpio-pin = <0>;
+	};
+};
+
+/*
+ * I2C0 control bus to TAS2505.  Confirm the SDA/SCL pin pair on your wiring
+ * (xG27 DK2602A breaks I2C0 out as PD2/PD3 by default).
+ */
+&pinctrl {
+	i2c0_default: i2c0_default {
+		group0 {
+			/* TODO: replace with the SDA/SCL pads you wired. */
+			pins = <I2C0_SDA_PD2>, <I2C0_SCL_PD3>;
+			drive-open-drain;
+			bias-pull-up;
+		};
+	};
+};
+
+&i2c0 {
+	status = "okay";
+	pinctrl-0 = <&i2c0_default>;
+	pinctrl-names = "default";
+	clock-frequency = <I2C_BITRATE_STANDARD>; /* 100 kHz; bump to FAST if needed */
+
+	tas2505: tas2505@18 {
+		compatible = "ti,tas2505";  /* informational; no Zephyr driver */
+		reg = <0x18>;
+		status = "okay";
+	};
+};
+
+/ {
+	aliases {
+		codec-tas2505 = &i2c0;
+	};
+};

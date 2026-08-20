@@ -1,0 +1,9 @@
+# ThrowTheSwitch Unity — used by on-target driver tests (e.g. I2S USART).
+# Fetched by `west update` into modules/lib/unity (workspace root = projects/).
+
+manifest:
+  projects:
+    - name: unity
+      url: https://github.com/ThrowTheSwitch/Unity
+      revision: v2.5.2
+      path: modules/lib/unity

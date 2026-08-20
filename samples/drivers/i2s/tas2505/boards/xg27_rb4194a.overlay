@@ -1,0 +1,91 @@
+/*
+ * xG27-RB4194A (BRD4194A): EUSART0 uses PC0/PC1/PC2 for the on-board MX25R8035F
+ * SPI flash. This overlay disables that flash (and EUSART0), then configures
+ * USART0 in I2S mode on the same pins plus PC3 for word select.
+ *
+ * I2C0 stays on PB2/PB3 (board default) for the TAS2505 control bus.
+ * USART1 remains the console (PA5/PA6).
+ *
+ * Wire I2S to the expansion header: PC0=TX, PC1=RX, PC2=BCLK, PC3=LRCLK.
+ * MCLK is routed to PA4 via CMU EXPCLK (19.2 MHz with prescaler 4).
+ */
+
+#include <zephyr/dt-bindings/pinctrl/silabs/xg27-pinctrl.h>
+#include <zephyr/dt-bindings/dma/silabs/xg27-dma.h>
+
+&dma0 {
+	status = "okay";
+};
+
+/ {
+	aliases {
+		i2s-tx = &usart0;
+		/delete-property/ spi-flash0;
+	};
+};
+
+&pinctrl {
+	usart0_i2s_default: usart0_i2s_default {
+		group0 {
+			pins = <USART0_TX_PC0>, <USART0_CLK_PC2>, <USART0_CS_PC3>;
+			drive-push-pull;
+			output-high;
+		};
+
+		group1 {
+			pins = <USART0_RX_PC1>;
+			input-enable;
+		};
+	};
+};
+
+&mx25r80 {
+	status = "disabled";
+};
+
+&ls013b7dh03 {
+	status = "disabled";
+};
+
+&eusart0 {
+	status = "disabled";
+};
+
+&usart0 {
+	compatible = "silabs,efr32-usart-i2s";
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "okay";
+	pinctrl-0 = <&usart0_i2s_default>;
+	pinctrl-names = "default";
+	dmas = <&dma0 DMA_REQSEL_USART0TXBL>,
+	       <&dma0 DMA_REQSEL_USART0TXBLRIGHT>,
+	       <&dma0 DMA_REQSEL_USART0RXDATAV>;
+	dma-names = "txbl", "txblright", "rx";
+	silabs,mclk-out = <&silabs_cmu_clkout>;
+};
+
+/ {
+	silabs_cmu_clkout: silabs_cmu_clkout {
+		compatible = "silabs,efr32-cmu-clkout";
+		status = "okay";
+		silabs,clkout-source = "expclk";
+		silabs,clkout-prescaler = <4>;
+		silabs,clkout-gpio-port = <0>;
+		silabs,clkout-gpio-pin = <4>;
+	};
+};
+
+&i2c0 {
+	tas2505: tas2505@18 {
+		compatible = "ti,tas2505";
+		reg = <0x18>;
+		status = "okay";
+	};
+};
+
+/ {
+	aliases {
+		codec-tas2505 = &i2c0;
+	};
+};
