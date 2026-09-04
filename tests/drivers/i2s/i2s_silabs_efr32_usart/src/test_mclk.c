@@ -9,14 +9,14 @@
  * -----
  * Some external audio codecs (TAS2505, WM8731, ...) need a high-frequency
  * MCLK supplied by the MCU on a dedicated pin. The Silabs CMU clkout
- * driver (`silabs,efr32-cmu-clkout`) is what programs that output. This
+ * CMU clock driver (`silabs,series-clock-clkout` child) is what programs that output. This
  * test is the only place the PRS + TIMER1 capture infrastructure that
  * was previously embedded in the tas2505 sample now lives -- the
  * production sample no longer pulls in em_timer / em_prs.
  *
  * What it asserts
  * ---------------
- *   1. If `silabs,efr32-cmu-clkout` is present in DT (and enabled), the
+ *   1. If `silabs,series-clock-clkout` is present in DT (and enabled), the
  *      output frequency measured via PRS->TIMER1 capture sits within
  *      +/- 2 % of the nominal value derived from the DT source +
  *      prescaler. On the DK2602A test overlay this is
@@ -46,11 +46,11 @@ TEST_TEAR_DOWN(i2s_efr32_mclk)
 {
 }
 
-#if DT_HAS_COMPAT_STATUS_OKAY(silabs_efr32_cmu_clkout)
+#if DT_HAS_COMPAT_STATUS_OKAY(silabs_series_clock_clkout)
 
-#define MCO_NODE       DT_COMPAT_GET_ANY_STATUS_OKAY(silabs_efr32_cmu_clkout)
-#define MCO_GPIO_PORT  DT_PROP(MCO_NODE, silabs_clkout_gpio_port)
-#define MCO_PRESCALER  DT_PROP(MCO_NODE, silabs_clkout_prescaler)
+#define MCO_NODE       DT_COMPAT_GET_ANY_STATUS_OKAY(silabs_series_clock_clkout)
+#define MCO_CLKOUT_IDX DT_REG_ADDR(MCO_NODE)
+#define MCO_PRESCALER  DT_PROP_OR(MCO_NODE, clock_div, 1)
 
 /* HFRCODPLL default is 76.8 MHz on xG27 series. The clkout source on
  * the test overlay is EXPCLK = HFRCODPLL, so the expected MCLK on the
@@ -58,19 +58,16 @@ TEST_TEAR_DOWN(i2s_efr32_mclk)
 #define MCLK_HFRCODPLL_HZ 76800000U
 #define MCLK_EXPECTED_HZ  (MCLK_HFRCODPLL_HZ / (uint32_t)MCO_PRESCALER)
 
-/* PRS async producer: the EFR32 CMU low-domain CLKOUT pins are wired to
- * a fixed set of PRS signals depending on which GPIO port they route to.
- */
-static uint32_t prs_cmul_clkout_signal(uint8_t gpio_port)
+/* PRS async producer: each CMU CLKOUT output has a fixed PRS signal. */
+static uint32_t prs_cmul_clkout_signal(uint8_t clkout_idx)
 {
-	switch (gpio_port) {
-	case 0U:  /* PORT A */
-	case 1U:  /* PORT B */
-		return PRS_CMUL_CLKOUT2;
-	case 2U:  /* PORT C */
+	switch (clkout_idx) {
+	case 0U:
 		return PRS_CMUL_CLKOUT0;
-	case 3U:  /* PORT D */
+	case 1U:
 		return PRS_CMUL_CLKOUT1;
+	case 2U:
+		return PRS_CMUL_CLKOUT2;
 	default:
 		return 0U;
 	}
@@ -92,11 +89,11 @@ static uint32_t mclk_measure_timer(void)
 	}
 
 	unsigned int prs_ch = (unsigned int)prs_ch_i;
-	uint32_t prs_signal = prs_cmul_clkout_signal(MCO_GPIO_PORT);
+	uint32_t prs_signal = prs_cmul_clkout_signal(MCO_CLKOUT_IDX);
 
 	if (prs_signal == 0U) {
-		printk("MCLK measure: invalid PRS signal for GPIO port %u\n",
-		       (unsigned int)MCO_GPIO_PORT);
+		printk("MCLK measure: invalid PRS signal for CLKOUT%u\n",
+		       (unsigned int)MCO_CLKOUT_IDX);
 		return 0U;
 	}
 
@@ -160,7 +157,7 @@ TEST(i2s_efr32_mclk, clkout_in_2pct_range)
 		"MCLK out of +/- 2 % of expected = HFRCODPLL / prescaler");
 }
 
-#else  /* no silabs,efr32-cmu-clkout in DT */
+#else  /* no silabs,series-clock-clkout in DT */
 
 TEST(i2s_efr32_mclk, clkout_in_2pct_range)
 {
@@ -169,7 +166,7 @@ TEST(i2s_efr32_mclk, clkout_in_2pct_range)
 	 * Emit a newline first so the ignore reason stays readable on VCOM. */
 	printk("\n");
 	TEST_IGNORE_MESSAGE(
-		"no silabs,efr32-cmu-clkout in DT (add node to board overlay to run)");
+		"no silabs,series-clock-clkout in DT (add clkout node to cmu to run)");
 }
 
-#endif  /* DT_HAS_COMPAT_STATUS_OKAY(silabs_efr32_cmu_clkout) */
+#endif  /* DT_HAS_COMPAT_STATUS_OKAY(silabs_series_clock_clkout) */

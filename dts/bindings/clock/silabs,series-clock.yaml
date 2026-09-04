@@ -8,7 +8,7 @@ description: |
 
 compatible: "silabs,series-clock"
 
-include: [clock-controller.yaml, base.yaml]
+include: [clock-controller.yaml, base.yaml, pinctrl-device.yaml]
 
 properties:
   reg:

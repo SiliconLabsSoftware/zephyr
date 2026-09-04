@@ -263,7 +263,7 @@ On the DK, USART0 is normally used for the on-board MX25R8035F SPI flash
 `cs-gpios` property, then assigns `compatible = "silabs,efr32-usart-i2s"`
 with DMA slots and the `i2s-node0` alias. Console stays on USART1.
 
-The overlay also instantiates a `silabs,efr32-cmu-clkout` node on **PB0**
+The overlay also instantiates a `silabs,series-clock-clkout` node on **PB0**
 (EXPCLK = HFRCODPLL / 4 = 19.2 MHz). That output is read by the
 `i2s_efr32_mclk` group, which uses PRS routing + TIMER1 capture to verify
 the actual frequency is within +/- 2 % of the nominal value. PB0 is not

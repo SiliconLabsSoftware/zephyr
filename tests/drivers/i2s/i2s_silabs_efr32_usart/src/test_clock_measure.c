@@ -32,10 +32,10 @@
 #include "test_i2s_efr32_common.h"
 #include "unity_config.h"
 
-#if DT_HAS_COMPAT_STATUS_OKAY(silabs_efr32_cmu_clkout)
-#define MCO_NODE         DT_COMPAT_GET_ANY_STATUS_OKAY(silabs_efr32_cmu_clkout)
-#define MCO_GPIO_PIN     DT_PROP(MCO_NODE, silabs_clkout_gpio_pin)
-#define MCO_PRESCALER    DT_PROP(MCO_NODE, silabs_clkout_prescaler)
+#if DT_HAS_COMPAT_STATUS_OKAY(silabs_series_clock_clkout)
+#define MCO_NODE         DT_COMPAT_GET_ANY_STATUS_OKAY(silabs_series_clock_clkout)
+#define MCO_CLKOUT_IDX   DT_REG_ADDR(MCO_NODE)
+#define MCO_PRESCALER    DT_PROP_OR(MCO_NODE, clock_div, 1)
 #define HAS_MCO_MEASURE  1
 #else
 #define HAS_MCO_MEASURE  0
@@ -122,16 +122,16 @@ static void reset_after_verify(void)
 void test_clock__mclk_routed_at_expected_ratio(void)
 {
 #if !HAS_MCO_MEASURE
-	TEST_IGNORE_MESSAGE("requires silabs,efr32-cmu-clkout in board overlay");
+	TEST_IGNORE_MESSAGE("requires silabs,series-clock-clkout in board overlay");
 #else
 	uint32_t hfrco = hfrcodpll_hz_get();
 	uint32_t from_hfrco = hfrco / (uint32_t)MCO_PRESCALER;
 	uint32_t from_expclk = mco_expected_hz_from_expclk();
 
-	printk("MCO: EXPCLK/%u=%u Hz HFRCODPLL/%u=%u Hz (PA%u, config verify)\n",
+	printk("MCO: EXPCLK/%u=%u Hz HFRCODPLL/%u=%u Hz (CLKOUT%u, config verify)\n",
 	       (unsigned int)MCO_PRESCALER, from_expclk,
 	       (unsigned int)MCO_PRESCALER, from_hfrco,
-	       (unsigned int)MCO_GPIO_PIN);
+	       (unsigned int)MCO_CLKOUT_IDX);
 	unity_output_flush();
 
 	TEST_ASSERT_NOT_EQUAL_MESSAGE(0U, from_expclk, "EXPORTCLK frequency is zero");

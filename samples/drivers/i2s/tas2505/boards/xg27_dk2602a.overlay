@@ -44,27 +44,49 @@
 	status = "okay";
 	pinctrl-0 = <&usart0_i2s_default>;
 	pinctrl-names = "default";
+	/* MCLK via silabs,mclk-out — do not list &clkout2 under clocks. */
+	silabs,mclk-out = <&clkout2>;
 	dmas = <&dma0 DMA_REQSEL_USART0TXBL>,
 	       <&dma0 DMA_REQSEL_USART0TXBLRIGHT>,
 	       <&dma0 DMA_REQSEL_USART0RXDATAV>;
 	dma-names = "txbl", "txblright", "rx";
-	silabs,mclk-out = <&silabs_cmu_clkout>;
 };
 
 /*
- * MCLK via EXPCLK prescaler. SYSCLK = HFRCODPLL = 76.8 MHz (default, untouched).
- * MCLK = 76.8 MHz / prescaler.  prescaler = 4 -> 19.2 MHz on the pin.
- * No DPLL retune, no SYSCLK change -> the rest of the system is unaffected.
+ * MCLK via CMU CLKOUT2 on PB0. SYSCLK = HFRCODPLL = 76.8 MHz (default, untouched).
+ * Source EXPORTCLK (HFEXPCLK) with clock-div = 4 -> 19.2 MHz on the pin.
+ * Pin mux + EXPORTCLK enable happen on I2S configure (clock_control_on).
  */
+&pinctrl {
+	clkout_default: clkout_default {
+		group0 {
+			pins = <CMU_CLKOUT2_PB0>;
+			drive-push-pull;
+		};
+	};
+};
 
 / {
-	silabs_cmu_clkout: silabs_cmu_clkout {
-		compatible = "silabs,efr32-cmu-clkout";
+	exportclk: exportclk {
+		compatible = "silabs,series2-exportclk";
+		#clock-cells = <0>;
 		status = "okay";
-		silabs,clkout-source = "expclk";
-		silabs,clkout-prescaler = <4>;
-		silabs,clkout-gpio-port = <1>;
-		silabs,clkout-gpio-pin = <0>;
+	};
+};
+
+&cmu {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	pinctrl-0 = <&clkout_default>;
+	pinctrl-names = "default";
+
+	clkout2: clkout@2 {
+		compatible = "silabs,series-clock-clkout";
+		reg = <2>;
+		#clock-cells = <0>;
+		clocks = <&exportclk>;
+		clock-div = <4>;
+		status = "okay";
 	};
 };
 

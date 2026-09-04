@@ -8,11 +8,5 @@ config CLOCK_CONTROL_SILABS_SERIES
 	select SILABS_SISDK_CLOCK_MANAGER
 	help
 	  Enable Silicon Labs Series 2+ Clock Management Unit clock control driver.
-
-config CLOCK_SILABS_EFR32_MCO
-	bool "Silicon Labs EFR32 CMU Clock Output (MCO/MCLK) driver"
-	default y
-	depends on DT_HAS_SILABS_EFR32_CMU_CLKOUT_ENABLED
-	help
-	  Configure CMU CLKOUT pins to output internal clocks (HFRCODPLL, HFXO,
-	  etc.) for external use, e.g. MCLK for audio codecs.
+	  This driver also configures CMU CLKOUT (MCO) outputs declared as
+	  "silabs,series-clock-clkout" children of the cmu node.

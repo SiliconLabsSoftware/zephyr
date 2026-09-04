@@ -1,6 +1,8 @@
 # Copyright (c) 2026 Silicon Laboratories Inc.
 # SPDX-License-Identifier: Apache-2.0
 
+title: Silicon Labs Series 2 I2S (Inter-Integrated Circuit Sound)
+
 description: |
   Silicon Labs EFR32 Series 2 USART peripheral operating in I2S mode (synchronous
   audio). The hardware uses the same USART registers as SPI/UART; the pinout must
@@ -49,6 +51,21 @@ properties:
   clocks:
     required: true
 
+  clock-names:
+    description: |
+      Name the USART peripheral bus clock (typically ``peripheral``). Do **not**
+      list a CLKOUT / MCLK provider here: putting ``silabs,series-clock-clkout``
+      in ``clocks`` created a Zephyr init dependency that hung boot on
+      xg27_rb4194a before the console came up. Use ``silabs,mclk-out`` instead.
+
+  silabs,mclk-out:
+    type: phandle
+    description: |
+      Optional phandle to a ``silabs,series-clock-clkout`` node that supplies
+      codec MCLK. The driver gates it with clock_control_on()/off() on
+      configure / de-configure. Prefer this over naming an ``mclk`` entry in
+      ``clocks`` / ``clock-names``.
+
   dmas:
     required: true
     description: |
@@ -71,12 +88,3 @@ properties:
     description: |
       Mono TX slot when ``channels = 1`` (which slot carries application audio;
       the other slot is padded with silence).
-
-  silabs,mclk-out:
-    type: phandle
-    description: |
-      Optional reference to a ``silabs,efr32-cmu-clkout`` node that routes MCLK
-      to an external audio codec. When present, the I2S driver calls
-      ``silabs_mco_enable()`` after a successful ``i2s_configure()`` and
-      ``silabs_mco_disable()`` on configure-off (``frame_clk_freq == 0``).
-      Omit this property on boards that do not use CMU CLKOUT for MCLK.

@@ -532,7 +532,7 @@ stream" check):
 * BCLK ≈ ``Fs × channels × word_size``. For 16 k / 2 / 16 → **512 kHz**;
   for 48 k / 2 / 32 → **3.072 MHz** etc.
 * LRCLK / WCLK ≈ ``FRAME_CLK_HZ``, 50 % duty.
-* MCLK ≈ 19.2 MHz on PA4 (RB4194A) / PB0 (DK2602A) when
+* MCLK ≈ 19.2 MHz on PB0 / EXP7 (RB4194A and DK2602A) when
   ``silabs_cmu_clkout`` is enabled by the board overlay (matches SRS 1.d).
 * In ``loopback`` mode the boot log keeps streaming blocks forever; in
   ``one_shot`` mode it logs ``I2S stopped; BCLK/LRCLK gated`` once the

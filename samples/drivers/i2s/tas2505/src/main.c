@@ -34,15 +34,15 @@
 
 #define CODEC_I2C_NODE DT_ALIAS(codec_tas2505)
 
-#if DT_HAS_COMPAT_STATUS_OKAY(silabs_efr32_cmu_clkout)
+#if DT_HAS_COMPAT_STATUS_OKAY(silabs_series_clock_clkout)
 /*
- * MCLK on PB0 comes from silabs,efr32-cmu-clkout with source "expclk"
- * (HFRCODPLL through EXPORTCLK prescaler).
+ * MCLK comes from a CMU CLKOUT (silabs,series-clock-clkout) sourced from
+ * EXPORTCLK (HFEXPCLK = SYSCLK) divided by clock-div. SYSCLK = HFRCODPLL
+ * default 76.8 MHz on xG27, so clock-div = 4 -> 19.2 MHz.
  */
-#define TAS2505_MCO_NODE       DT_COMPAT_GET_ANY_STATUS_OKAY(silabs_efr32_cmu_clkout)
-#define TAS2505_HFRCODPLL_NODE DT_NODELABEL(hfrcodpll)
-#define CODEC_MCLK_HZ          (DT_PROP(TAS2505_HFRCODPLL_NODE, clock_frequency) \
-                                / (uint32_t)DT_PROP(TAS2505_MCO_NODE, silabs_clkout_prescaler))
+#define TAS2505_MCO_NODE  DT_COMPAT_GET_ANY_STATUS_OKAY(silabs_series_clock_clkout)
+#define TAS2505_SYSCLK_HZ 76800000U
+#define CODEC_MCLK_HZ     (TAS2505_SYSCLK_HZ / (uint32_t)DT_PROP_OR(TAS2505_MCO_NODE, clock_div, 1))
 #else
 #define CODEC_MCLK_HZ 19200000U
 #endif
@@ -104,8 +104,8 @@ typedef int32_t sample_t;
 
 #define NUM_BLOCKS         8
 #define SAMPLES_PER_BLOCK  256
-#define PREROLL_BLOCKS     4
-#define TAIL_SILENT_BLOCKS 4
+#define PREROLL_BLOCKS     0
+#define TAIL_SILENT_BLOCKS 0
 #define BLOCK_FRAMES       SAMPLES_PER_BLOCK
 #define DRAIN_TIMEOUT_MS   2000U
 
@@ -235,8 +235,6 @@ int main(void)
     }
   }
   LOG_INF("pre-roll queued: %u silent blocks", (unsigned int)PREROLL_BLOCKS);
-
-  k_sleep(K_MSEC(100));
 
   LOG_INF("I2S START @ %d Hz", FRAME_CLK_HZ);
   ret = i2s_trigger(dev, I2S_DIR_TX, I2S_TRIGGER_START);

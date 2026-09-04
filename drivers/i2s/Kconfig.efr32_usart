@@ -10,6 +10,8 @@ menuconfig I2S_SILABS_EFR32_USART
 	depends on DMA
 	select PINCTRL
 	select DMA_SILABS_LDMA
+	select SILABS_SISDK_USART
+	select SILABS_SISDK_PRS
 	help
 	  I2S over USART synchronous mode with I2SCTRL enabled (EFR32xG2x and
 	  similar). Audio data is transferred using the SoC LDMA controller

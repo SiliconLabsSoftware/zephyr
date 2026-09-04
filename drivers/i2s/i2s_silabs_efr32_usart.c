@@ -22,20 +22,16 @@
 #include <zephyr/sys/time_units.h>
 #include <zephyr/sys/util.h>
 
-#include <em_usart.h>
+#include <sl_hal_usart.h>
 #include <soc.h>
-
-#if IS_ENABLED(CONFIG_CLOCK_SILABS_EFR32_MCO)
-#include <zephyr/drivers/clock_control/clock_silabs_efr32_mco.h>
-#endif
 
 #define SUPPORTED_OPTIONS                                                           \
   (I2S_OPT_BIT_CLK_CONTROLLER | I2S_OPT_FRAME_CLK_CONTROLLER | I2S_OPT_BIT_CLK_CONT \
    | I2S_OPT_BIT_CLK_GATED)
 
-#define TX_RING_SIZE CONFIG_I2S_SILABS_EFR32_USART_TX_BLOCK_COUNT
-#define RX_RING_SIZE CONFIG_I2S_SILABS_EFR32_USART_RX_BLOCK_COUNT
-#define I2S_RING_CAP MAX(TX_RING_SIZE, RX_RING_SIZE)
+#define TX_BLOCK_Q_DEPTH CONFIG_I2S_SILABS_EFR32_USART_TX_BLOCK_COUNT
+#define RX_BLOCK_Q_DEPTH CONFIG_I2S_SILABS_EFR32_USART_RX_BLOCK_COUNT
+#define I2S_BLOCK_Q_MAX_DEPTH MAX(TX_BLOCK_Q_DEPTH, RX_BLOCK_Q_DEPTH)
 
 /* Stereo: every LRCLK frame carries L + R = 2 channel slots. */
 #define I2S_STEREO_SLOTS_PER_FRAME 2U
@@ -104,15 +100,12 @@ enum i2s_efr32_mono_tx_slot {
   I2S_EFR32_MONO_TX_SLOT_RIGHT = 1,
 };
 
-struct i2s_efr32_ring {
-  struct {
-    void *blk;
-    size_t len;
-  } items[I2S_RING_CAP];
-  uint16_t head;
-  uint16_t tail;
-  uint16_t count;
-  uint16_t cap;
+/* One queued I2S memory block (pointer + byte length). Stored by value in a
+ * Zephyr k_msgq for ISR/thread-safe block handoff.
+ */
+struct i2s_efr32_block {
+  void *blk;
+  size_t len;
 };
 
 struct i2s_efr32_dma {
@@ -133,35 +126,34 @@ struct i2s_efr32_cfg {
   uint32_t dma_txbl_slot;      /* LDMA slot: USARTnTXBL (buffer level, not "left") */
   uint32_t dma_txblright_slot; /* LDMA slot: USARTnTXBLRIGHT (mono DMASPLIT only) */
   uint32_t dma_rx_slot;
-  const struct device *mclk_dev;
+  const struct device *mclk_dev; /* optional CMU CLKOUT providing codec MCLK */
   bool has_tx_split;
   uint8_t mono_tx_default;
 };
 
- #if IS_ENABLED(CONFIG_CLOCK_SILABS_EFR32_MCO)
-static int i2s_efr32_mco_set(const struct device *mclk, bool enable)
+/*
+ * Gate codec MCLK (a CMU CLKOUT clock_control device) with the standard
+ * clock_control API: enabled while I2S is configured, disabled on de-configure.
+ * Wired via silabs,mclk-out (not the USART clocks property).
+ */
+static void i2s_efr32_mclk_set(const struct device *mclk, bool enable)
 {
   if (mclk == NULL) {
-    return 0;
+    return;
   }
-
-  return enable ? silabs_mco_enable(mclk) : silabs_mco_disable(mclk);
+  if (enable) {
+    (void)clock_control_on(mclk, NULL);
+  } else {
+    (void)clock_control_off(mclk, NULL);
+  }
 }
- #else
-static int i2s_efr32_mco_set(const struct device *mclk, bool enable)
-{
-  ARG_UNUSED(mclk);
-  ARG_UNUSED(enable);
-
-  return 0;
-}
- #endif
 
 struct i2s_efr32_stream {
   int32_t state;
   bool cfg_valid;
   struct i2s_config cfg;
-  struct i2s_efr32_ring q;
+  struct k_msgq q;
+  char q_buf[I2S_BLOCK_Q_MAX_DEPTH * sizeof(struct i2s_efr32_block)];
   void *active;
   void *pending;
   struct i2s_efr32_dma dma;
@@ -192,7 +184,7 @@ static void tx_finish_stopping_if_quiescent(const struct device *dev)
   if (tx->state != I2S_STATE_STOPPING) {
     return;
   }
-  if (tx->active != NULL || tx->pending != NULL || tx->q.count != 0U) {
+  if (tx->active != NULL || tx->pending != NULL || k_msgq_num_used_get(&tx->q) != 0U) {
     return;
   }
   /*
@@ -211,36 +203,23 @@ static void tx_finish_stopping_if_quiescent(const struct device *dev)
   tx->state = I2S_STATE_READY;
 }
 
-static void ring_init(struct i2s_efr32_ring *r, uint16_t capacity)
+static inline int block_q_put(struct k_msgq *q, void *blk, size_t len)
 {
-  r->head = 0U;
-  r->tail = 0U;
-  r->count = 0U;
-  r->cap = capacity;
+  struct i2s_efr32_block item = { .blk = blk, .len = len };
+
+  return k_msgq_put(q, &item, K_NO_WAIT);
 }
 
-static int ring_push(struct i2s_efr32_ring *r, void *blk, size_t len)
+static inline int block_q_get(struct k_msgq *q, void **blk, size_t *len)
 {
-  if (r->count >= r->cap) {
-    return -ENOMEM;
-  }
-  r->items[r->head].blk = blk;
-  r->items[r->head].len = len;
-  r->head = (r->head + 1U) % r->cap;
-  r->count++;
-  return 0;
-}
+  struct i2s_efr32_block item = { 0 };
+  int ret = k_msgq_get(q, &item, K_NO_WAIT);
 
-static int ring_pop(struct i2s_efr32_ring *r, void **blk, size_t *len)
-{
-  if (r->count == 0U) {
-    return -ENOENT;
+  if (ret == 0) {
+    *blk = item.blk;
+    *len = item.len;
   }
-  *blk = r->items[r->tail].blk;
-  *len = r->items[r->tail].len;
-  r->tail = (r->tail + 1U) % r->cap;
-  r->count--;
-  return 0;
+  return ret;
 }
 
 static inline void apply_dma_xfer_size(struct dma_config *dma_cfg,
@@ -310,20 +289,20 @@ static void tx_dma_apply_mono(struct i2s_efr32_data *data, USART_TypeDef *base,
 
 static void hw_disable_data_irqs(USART_TypeDef *base)
 {
-  USART_IntDisable(base, USART_IF_TXBL | USART_IF_RXDATAV);
-  USART_IntClear(base, USART_IF_TXBL | USART_IF_RXDATAV);
+  sl_hal_usart_disable_interrupts(base, USART_IF_TXBL | USART_IF_RXDATAV);
+  sl_hal_usart_clear_interrupts(base, USART_IF_TXBL | USART_IF_RXDATAV);
 }
 
 static void hw_clear_error_irqs(USART_TypeDef *base)
 {
-  USART_IntDisable(base, USART_IF_RXOF | USART_IF_TXUF);
-  USART_IntClear(base, USART_IF_RXOF | USART_IF_TXUF);
+  sl_hal_usart_disable_interrupts(base, USART_IF_RXOF | USART_IF_TXUF);
+  sl_hal_usart_clear_interrupts(base, USART_IF_RXOF | USART_IF_TXUF);
 }
 
 /*
  * Compute USART CLKDIV for sync (I2S) mode with fractional precision.
  *
- * emlib USART_BaudrateSyncSet() only programs the integer divider
+ * sl_hal_usart_sync_calculate_clock_div() only yields the integer divider
  * (clkdiv = (ref/(2*br)) << 8), which leaves the fractional sub-field at 0.
  *
  * RM: br = (128 * ref) / (256 + CLKDIV)  =>  CLKDIV = round(128*ref/br) - 256
@@ -385,7 +364,7 @@ static int validate_i2s_config(const struct i2s_efr32_cfg *pcfg,
     return -EINVAL;
   }
   /* USART I2S supports DATABITS=16 only; expose 16- and 32-bit slots via
-   * usartI2sFormatW16D16 / W32D16 (16-bit data padded to 32-bit slot).
+   * SL_HAL_USART_I2S_FORMAT_W16D16 / W32D16 (16-bit data padded to 32-bit slot).
    */
   if (ic->word_size != 16U && ic->word_size != 32U) {
     return -EINVAL;
@@ -414,7 +393,7 @@ static int hw_i2s_apply(const struct device *dev)
   const struct i2s_efr32_cfg *pcfg = dev->config;
   struct i2s_efr32_data *data = dev->data;
   const struct i2s_config *ic;
-  USART_InitI2s_TypeDef init = USART_INITI2S_DEFAULT;
+  sl_hal_usart_i2s_init_t init = SL_HAL_USART_INIT_I2S_DEFAULT;
   uint32_t ref_hz = 0;
   uint32_t bit_hz;
   int err;
@@ -436,8 +415,8 @@ static int hw_i2s_apply(const struct device *dev)
    * Example: frame_clk=16 kHz, word_size=16  -> bit_hz = 16k*2*16 = 512 kHz.
    *          frame_clk=48 kHz, word_size=32  -> bit_hz = 48k*2*32 = 3.072 MHz.
    *
-   * Fed to emlib via init.sync.baudrate; emlib computes CLKDIV from
-   * HFPERCLK and produces SCLK == bit_hz on the wire.
+   * Converted to a CLKDIV via sl_hal_usart_sync_calculate_clock_div() so the
+   * USART produces SCLK == bit_hz on the wire.
    */
   bit_hz = ic->frame_clk_freq * I2S_STEREO_SLOTS_PER_FRAME
            * (uint32_t)ic->word_size;
@@ -454,33 +433,32 @@ static int hw_i2s_apply(const struct device *dev)
 
   hw_disable_data_irqs(pcfg->base);
 
-  init.sync.refFreq = ref_hz;
-  init.sync.baudrate = bit_hz;
-  init.sync.databits = usartDatabits16;
+  init.sync.clock_div = sl_hal_usart_sync_calculate_clock_div(ref_hz, bit_hz);
+  init.sync.data_bits = SL_HAL_USART_DATA_BITS_16;
   init.sync.master = true;
-  init.sync.msbf = true;
-  init.sync.clockMode =
+  init.sync.msb_first = true;
+  init.sync.clock_mode =
     ((ic->format & I2S_FMT_CLK_FORMAT_MASK) == I2S_FMT_CLK_NF_IB)
     || ((ic->format & I2S_FMT_CLK_FORMAT_MASK) == I2S_FMT_CLK_IF_IB)
-    ? usartClockMode1
-    : usartClockMode0;
+    ? SL_HAL_USART_CLOCK_MODE_1
+    : SL_HAL_USART_CLOCK_MODE_0;
   switch (ic->word_size) {
     case 16U:
-      init.format = usartI2sFormatW16D16;
+      init.format = SL_HAL_USART_I2S_FORMAT_W16D16;
       break;
     case 32U:
-      init.format = usartI2sFormatW32D16;
+      init.format = SL_HAL_USART_I2S_FORMAT_W32D16;
       break;
     default:
       return -EINVAL;
   }
-  init.justify = usartI2sJustifyLeft;
+  init.justify = SL_HAL_USART_JUSTIFY_LEFT;
   /*
    * Wire format stays stereo (MONO=0): LRCLK toggles L/R. Mono TX uses
    * DMASPLIT + dual LDMA (samples on one slot, silence on the other).
    */
   init.mono = false;
-  init.dmaSplit = data->tx.cfg_valid && tx_cfg_is_mono(&data->tx.cfg);
+  init.dma_split = data->tx.cfg_valid && tx_cfg_is_mono(&data->tx.cfg);
 
   if ((ic->format & I2S_FMT_DATA_FORMAT_MASK) == I2S_FMT_DATA_FORMAT_I2S) {
     init.delay = true;
@@ -488,15 +466,14 @@ static int hw_i2s_apply(const struct device *dev)
     init.delay = false;
   }
 
-  init.sync.enable = usartDisable;
-
-  USART_InitI2s(pcfg->base, &init);
+  sl_hal_usart_reset(pcfg->base);
+  sl_hal_usart_init_i2s(pcfg->base, &init);
 
   /*
-   * Override emlib integer-only CLKDIV so BCLK matches bit_hz as closely
-   * as the USART fractional divider allows. Only apply the override if
-   * i2s_efr32_sync_clkdiv() returns a valid value; otherwise keep the
-   * divider USART_InitI2s() programmed.
+   * Override the integer-only CLKDIV that sl_hal_usart_init_i2s() programs so
+   * BCLK matches bit_hz as closely as the USART fractional divider allows.
+   * Only apply the override when i2s_efr32_sync_clkdiv() returns a valid
+   * value; otherwise keep the divider the init function programmed.
    */
   {
     uint32_t clkdiv;
@@ -506,12 +483,12 @@ static int hw_i2s_apply(const struct device *dev)
     }
   }
 
-  if (data->tx.cfg_valid && data->rx.cfg_valid) {
-    USART_Enable(pcfg->base, usartEnable);
-  } else if (data->tx.cfg_valid) {
-    USART_Enable(pcfg->base, usartEnableTx);
-  } else {
-    USART_Enable(pcfg->base, usartEnableRx);
+  sl_hal_usart_enable(pcfg->base);
+  if (data->tx.cfg_valid) {
+    sl_hal_usart_enable_tx(pcfg->base);
+  }
+  if (data->rx.cfg_valid) {
+    sl_hal_usart_enable_rx(pcfg->base);
   }
 
   {
@@ -523,7 +500,7 @@ static int hw_i2s_apply(const struct device *dev)
     if (data->rx.cfg_valid) {
       interrupt_enable |= USART_IF_RXOF;
     }
-    USART_IntEnable(pcfg->base, interrupt_enable);
+    sl_hal_usart_enable_interrupts(pcfg->base, interrupt_enable);
   }
 
   return 0;
@@ -551,7 +528,7 @@ static void rx_drop(const struct device *dev, struct i2s_efr32_data *data,
                     const struct i2s_efr32_cfg *cfg);
 
 /*
- * Stop / power-down: drop DMA, gate USART clocks, disable MCLK.
+ * Stop / power-down: drop DMA, gate USART clocks, and disable codec MCLK.
  * Caller must hold data->cfg_lock.
  */
 static int configure_power_down(const struct device *dev)
@@ -569,14 +546,16 @@ static int configure_power_down(const struct device *dev)
     rx_drop(dev, data, pcfg);
   }
 
-  USART_Enable(pcfg->base, usartDisable);
+  sl_hal_usart_disable(pcfg->base);
 
   data->tx.cfg_valid = false;
   data->rx.cfg_valid = false;
   data->tx.state = I2S_STATE_NOT_READY;
   data->rx.state = I2S_STATE_NOT_READY;
 
-  return i2s_efr32_mco_set(pcfg->mclk_dev, false);
+  i2s_efr32_mclk_set(pcfg->mclk_dev, false);
+
+  return 0;
 }
 
 static int validate_configure_block_size(const struct i2s_config *cfg)
@@ -682,11 +661,7 @@ static int i2s_efr32_configure(const struct device *dev, enum i2s_dir dir, const
   data->tx.state = data->tx.cfg_valid ? I2S_STATE_READY : I2S_STATE_NOT_READY;
   data->rx.state = data->rx.cfg_valid ? I2S_STATE_READY : I2S_STATE_NOT_READY;
 
-  err = i2s_efr32_mco_set(pcfg->mclk_dev, true);
-  if (err < 0) {
-    k_mutex_unlock(&data->cfg_lock);
-    return err;
-  }
+  i2s_efr32_mclk_set(pcfg->mclk_dev, true);
 
   k_mutex_unlock(&data->cfg_lock);
   return 0;
@@ -783,7 +758,7 @@ static void i2s_efr32_dma_rx_cb(const struct device *dma_dev, void *user_data, u
   irq_unlock(key);
 
   if (done != NULL) {
-    if (ring_push(&data->rx.q, done, done_len) < 0) {
+    if (block_q_put(&data->rx.q, done, done_len) < 0) {
       k_mem_slab_free(data->rx.cfg.mem_slab, done);
       data->rx.state = I2S_STATE_ERROR;
     } else {
@@ -881,11 +856,11 @@ static void i2s_efr32_tx_try_start(const struct device *dev)
 
   if (tx->active == NULL) {
     /*
-     * DMA is idle -- pop a block from the ring and perform a full
-     * dma_config() + dma_start() cycle.  Cold-start path used by
-     * I2S_TRIGGER_START and as fallback when the ring was empty.
+     * DMA is idle -- dequeue a block and perform a full dma_config() +
+     * dma_start() cycle.  Cold-start path used by I2S_TRIGGER_START and as
+     * fallback when the queue was empty.
      */
-    ret = ring_pop(&tx->q, &blk, &len);
+    ret = block_q_get(&tx->q, &blk, &len);
     irq_unlock(key);
 
     if (ret < 0) {
@@ -932,7 +907,7 @@ static void i2s_efr32_tx_try_start(const struct device *dev)
    * The LDMA hardware will seamlessly transition via LINKLOAD, eliminating
    * the gap that dma_stop/config/start would introduce.
    */
-  ret = ring_pop(&tx->q, &blk, &len);
+  ret = block_q_get(&tx->q, &blk, &len);
   if (ret < 0) {
     irq_unlock(key);
     return;
@@ -1016,8 +991,8 @@ static void i2s_efr32_rx_try_start(const struct device *dev)
 static int i2s_efr32_read(const struct device *dev, void **mem_block, size_t *size)
 {
   struct i2s_efr32_data *data = dev->data;
-  void *blk;
-  size_t len;
+  void *blk = NULL;
+  size_t len = 0;
   int ret;
 
   if (!data->rx.cfg_valid) {
@@ -1031,7 +1006,7 @@ static int i2s_efr32_read(const struct device *dev, void **mem_block, size_t *si
 
   unsigned int key = irq_lock();
 
-  ret = ring_pop(&data->rx.q, &blk, &len);
+  ret = block_q_get(&data->rx.q, &blk, &len);
   irq_unlock(key);
 
   if (ret < 0) {
@@ -1071,7 +1046,7 @@ static int i2s_efr32_write(const struct device *dev, void *mem_block, size_t siz
 
   unsigned int key = irq_lock();
 
-  ret = ring_push(&data->tx.q, mem_block, size);
+  ret = block_q_put(&data->tx.q, mem_block, size);
   irq_unlock(key);
 
   if (ret < 0) {
@@ -1113,7 +1088,7 @@ static void tx_drop(const struct device *dev, struct i2s_efr32_data *data,
     data->tx.active = NULL;
   }
 
-  while (ring_pop(&data->tx.q, &blk, &len) == 0) {
+  while (block_q_get(&data->tx.q, &blk, &len) == 0) {
     k_mem_slab_free(data->tx.cfg.mem_slab, blk);
     k_sem_give(&data->tx.sem);
   }
@@ -1136,7 +1111,7 @@ static void rx_drop(const struct device *dev, struct i2s_efr32_data *data,
     data->rx.active = NULL;
   }
 
-  while (ring_pop(&data->rx.q, &blk, &len) == 0) {
+  while (block_q_get(&data->rx.q, &blk, &len) == 0) {
     k_mem_slab_free(data->rx.cfg.mem_slab, blk);
   }
   while (k_sem_take(&data->rx.sem, K_NO_WAIT) == 0) {
@@ -1170,7 +1145,8 @@ static int trigger_stop(const struct device *dev, enum i2s_dir dir,
     if (data->tx.state != I2S_STATE_RUNNING) {
       return -EINVAL;
     }
-    if (data->tx.active == NULL && data->tx.pending == NULL && data->tx.q.count == 0U) {
+    if (data->tx.active == NULL && data->tx.pending == NULL
+        && k_msgq_num_used_get(&data->tx.q) == 0U) {
       data->tx.state = I2S_STATE_READY;
     } else {
       data->tx.state = I2S_STATE_STOPPING;
@@ -1272,7 +1248,7 @@ static void i2s_efr32_isr(const void *arg)
   const struct device *dev = arg;
   const struct i2s_efr32_cfg *cfg = dev->config;
   struct i2s_efr32_data *data = dev->data;
-  uint32_t flags = USART_IntGet(cfg->base);
+  uint32_t flags = sl_hal_usart_get_pending_interrupts(cfg->base);
 
   if (flags & USART_IF_TXUF) {
     /*
@@ -1284,14 +1260,14 @@ static void i2s_efr32_isr(const void *arg)
      * stream from being killed at every block boundary at high
      * sample rates (>= 16 kHz).
      */
-    USART_IntClear(cfg->base, USART_IF_TXUF);
+    sl_hal_usart_clear_interrupts(cfg->base, USART_IF_TXUF);
   }
 
   if (flags & USART_IF_RXOF) {
     data->rx.state = I2S_STATE_ERROR;
     dma_stop(cfg->dma_dev, (uint32_t)data->rx.dma.channel);
     data->rx.dma.busy = false;
-    USART_IntClear(cfg->base, USART_IF_RXOF);
+    sl_hal_usart_clear_interrupts(cfg->base, USART_IF_RXOF);
   }
 }
 
@@ -1303,10 +1279,10 @@ static int i2s_efr32_init(const struct device *dev)
   int err;
 
   k_mutex_init(&data->cfg_lock);
-  ring_init(&data->tx.q, TX_RING_SIZE);
-  ring_init(&data->rx.q, RX_RING_SIZE);
-  k_sem_init(&data->tx.sem, TX_RING_SIZE, TX_RING_SIZE);
-  k_sem_init(&data->rx.sem, 0, RX_RING_SIZE);
+  k_msgq_init(&data->tx.q, data->tx.q_buf, sizeof(struct i2s_efr32_block), TX_BLOCK_Q_DEPTH);
+  k_msgq_init(&data->rx.q, data->rx.q_buf, sizeof(struct i2s_efr32_block), RX_BLOCK_Q_DEPTH);
+  k_sem_init(&data->tx.sem, TX_BLOCK_Q_DEPTH, TX_BLOCK_Q_DEPTH);
+  k_sem_init(&data->rx.sem, 0, RX_BLOCK_Q_DEPTH);
 
   if (!device_is_ready(cfg->dma_dev)) {
     return -ENODEV;
@@ -1415,7 +1391,7 @@ static int i2s_efr32_init(const struct device *dev)
 
   hw_disable_data_irqs(base);
   hw_clear_error_irqs(base);
-  USART_IntEnable(base, USART_IF_RXOF | USART_IF_TXUF);
+  sl_hal_usart_enable_interrupts(base, USART_IF_RXOF | USART_IF_TXUF);
 
   cfg->irq_connect(dev);
   return 0;
@@ -1441,9 +1417,15 @@ static DEVICE_API(i2s, i2s_efr32_driver_api) = {
     irq_enable(DT_INST_IRQ_BY_NAME(idx, tx, irq));                                         \
   }
 
-#define I2S_EFR32_MCLK_DEV(idx)                            \
-  COND_CODE_1(DT_INST_NODE_HAS_PROP(idx, silabs_mclk_out), \
-              (DEVICE_DT_GET(DT_INST_PHANDLE(idx, silabs_mclk_out))), (NULL))
+/*
+ * Prefer silabs,mclk-out (no Zephyr clocks-init dependency). Fall back to a
+ * clocks entry named "mclk" for older overlays.
+ */
+#define I2S_EFR32_MCLK_DEV(idx)                                       \
+  COND_CODE_1(DT_INST_NODE_HAS_PROP(idx, silabs_mclk_out),            \
+              (DEVICE_DT_GET(DT_INST_PHANDLE(idx, silabs_mclk_out))), \
+              (COND_CODE_1(DT_INST_CLOCKS_HAS_NAME(idx, mclk),        \
+                           (DEVICE_DT_GET(DT_INST_CLOCKS_CTLR_BY_NAME(idx, mclk))), (NULL))))
 
 #define I2S_EFR32_HAS_TXBL_DMA(idx) \
   (DT_INST_DMAS_HAS_NAME(idx, txbl) || DT_INST_DMAS_HAS_NAME(idx, tx))

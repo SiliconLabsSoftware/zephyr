@@ -114,12 +114,6 @@ void test_clock__mclk_routed_at_expected_ratio(void);
 void test_clock__bclk_matches_configured_rate__w16(void);
 void test_clock__bclk_matches_configured_rate__w32(void);
 
-/* --- MCO API (silabs_mco_enable / silabs_mco_disable) --- */
-void test_mclk_enable_fails(void);
-void test_mclk_disable_fails(void);
-void test_mclk_control__mco_enable_outputs_expected_hz(void);
-void test_mclk_control__mco_disable_stops_clock(void);
-
 int main(void)
 {
 	struct test_runner_log log;
@@ -224,12 +218,6 @@ int main(void)
 	RUN_TEST_LOG(test_clock__mclk_routed_at_expected_ratio);
 	RUN_TEST_LOG(test_clock__bclk_matches_configured_rate__w16);
 	RUN_TEST_LOG(test_clock__bclk_matches_configured_rate__w32);
-
-	printk("\n--- Group: MCO control (4) ---\n");
-	RUN_TEST_LOG(test_mclk_enable_fails);
-	RUN_TEST_LOG(test_mclk_disable_fails);
-	RUN_TEST_LOG(test_mclk_control__mco_enable_outputs_expected_hz);
-	RUN_TEST_LOG(test_mclk_control__mco_disable_stops_clock);
 
 	unity_output_flush();
 	unity_rc = UnityEnd();

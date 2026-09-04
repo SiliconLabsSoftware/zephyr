@@ -1,0 +1,19 @@
+# Copyright (c) 2026 Silicon Laboratories Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+title: Silicon Labs Series 2 CMU EXPORTCLK (HFEXPCLK) branch
+
+description: |
+  Marker node for the CMU HFEXPCLK export-clock branch (SYSCLK with an
+  additional prescaler). Reference it from a "silabs,series-clock-clkout"
+  node's "clocks" property to route the divided export clock to a CLKOUT pin;
+  the prescaler is taken from that node's "clock-div".
+
+compatible: "silabs,series2-exportclk"
+
+include: [base.yaml]
+
+properties:
+  "#clock-cells":
+    type: int
+    const: 0

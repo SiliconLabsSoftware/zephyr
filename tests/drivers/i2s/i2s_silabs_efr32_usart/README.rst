@@ -38,7 +38,7 @@ Requirements
   ``submanifests/unity.yaml``).
 * Silicon Labs EFR32xG27 board: ``xg27_dk2602a`` or ``xg27_rb4194a``.
 * Board overlay enables ``usart0`` as ``silabs,efr32-usart-i2s``, defines
-  alias ``i2s-tx``, and (for MCLK tests) ``silabs,efr32-cmu-clkout``.
+  alias ``i2s-tx``, and (for MCLK tests) ``silabs,series-clock-clkout``.
 
 Build matrix
 ------------
@@ -407,7 +407,7 @@ How each clock is verified
    * - **MCLK (MCO)**
      - **No**
      - Compares ``CMU_ClockFreqGet(cmuClock_EXPCLK) / prescaler`` against
-       ``HFRCODPLL / prescaler`` (within +/-5%). The ``silabs,efr32-cmu-clkout``
+       ``HFRCODPLL / prescaler`` (within +/-5%). The ``silabs,series-clock-clkout``
        driver has already routed EXPCLK to the MCO pin (PA4 on RB4194A,
        PB0 on DK2602A); the test re-derives the divider from CMU rather than
        sampling the pin.
@@ -443,7 +443,7 @@ Enabling / disabling the clock group
 The three clock cases run when the board overlay declares
 ``silabs,i2s-clock-measure`` (RB4194A overlay does, DK2602A overlay omits it
 so the two BCLK cases ``IGNORE`` at runtime). The MCLK case additionally
-needs ``silabs,efr32-cmu-clkout`` (present in both overlays).
+needs ``silabs,series-clock-clkout`` (present in both overlays).
 
 External / ppm-level verification
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -481,11 +481,11 @@ Troubleshooting
 * **BCLK clock test ignored** - rebuild with the RB4194A overlay that enables
   ``silabs,i2s-clock-measure``. On DK2602A the overlay omits that node so
   both BCLK cases ``IGNORE`` at runtime; the MCLK case still runs because
-  ``silabs,efr32-cmu-clkout`` is present on both boards.
+  ``silabs,series-clock-clkout`` is present on both boards.
 * **BCLK measured = 0 Hz** - regression: GPIO-DIN read-back on a USART-driven
   pin returns a static value. Verify ``test_clock_measure.c`` uses
   ``USART_BaudrateGet()`` (register read-back) and not GPIO polling on
   PC2/PC3.
-* **MCLK test fails** - confirm ``silabs,efr32-cmu-clkout`` is ``okay`` in the
+* **MCLK test fails** - confirm ``silabs,series-clock-clkout`` is ``okay`` in the
   overlay; on RB4194A the MCO pin is PA4, on DK2602A it is PB0. A wrong
-  ``silabs,clkout-prescaler`` will also miss the +/-5% window.
+  ``clock-div`` will also miss the +/-5% window.

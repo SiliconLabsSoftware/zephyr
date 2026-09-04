@@ -32,5 +32,4 @@ target_sources(app PRIVATE
     src/test_i2s_efr32_trigger.c
     src/test_i2s_efr32_sign_extension.c
     src/test_clock_measure.c
-    src/test_mclk_control.c
 )
