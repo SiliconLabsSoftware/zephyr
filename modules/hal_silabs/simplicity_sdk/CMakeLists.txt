@@ -368,10 +368,12 @@ zephyr_library_sources_ifdef(CONFIG_SILABS_SISDK_LDMA
 
 zephyr_library_sources_ifdef(CONFIG_SILABS_SISDK_MSC       ${EMLIB_DIR}/src/em_msc.c)
 zephyr_library_sources_ifdef(CONFIG_SILABS_SISDK_PRS       ${EMLIB_DIR}/src/em_prs.c)
+zephyr_library_sources_ifdef(CONFIG_SILABS_SISDK_PRS       ${PERIPHERAL_DIR}/src/sl_hal_prs.c)
 zephyr_library_sources_ifdef(CONFIG_SILABS_SISDK_RMU       ${EMLIB_DIR}/src/em_rmu.c)
 zephyr_library_sources_ifdef(CONFIG_SILABS_SISDK_RTCC      ${EMLIB_DIR}/src/em_rtcc.c)
 zephyr_library_sources_ifdef(CONFIG_SILABS_SISDK_EUSART    ${EMLIB_DIR}/src/em_eusart.c)
 zephyr_library_sources_ifdef(CONFIG_SILABS_SISDK_USART     ${EMLIB_DIR}/src/em_usart.c)
+zephyr_library_sources_ifdef(CONFIG_SILABS_SISDK_USART     ${PERIPHERAL_DIR}/src/sl_hal_usart.c)
 zephyr_library_sources_ifdef(CONFIG_SILABS_SISDK_WDOG      ${EMLIB_DIR}/src/em_wdog.c)
 
 zephyr_include_directories_ifdef(CONFIG_SILABS_SISDK_SE

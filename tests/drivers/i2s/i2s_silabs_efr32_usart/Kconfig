@@ -1,0 +1,83 @@
+# Copyright (c) 2026 Silicon Laboratories Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+mainmenu "I2S Silabs EFR32 USART driver tests (Unity)"
+
+source "Kconfig.zephyr"
+
+config I2S_EFR32_TEST_LOOPBACK
+	bool "Run loopback data-integrity tests"
+	help
+	  Enable the loopback test group. Requires an external wire from
+	  USART0 TX to USART0 RX: on xG27-DK2602A use PC0<->PC1; on
+	  xG27-RB4194A (BRD4194A) use PA8<->PA7 (PA8 is on the Silabs
+	  expansion header pin 13 per boards/xg27_rb4194a devicetree).
+	  Without the wire the read side blocks and tests time out.
+
+config I2S_EFR32_TEST_LOOPBACK_DEBUG
+	bool "Extra printk in loopback tests (driver RX path hints)"
+	depends on I2S_EFR32_TEST_LOOPBACK
+	default n
+	help
+	  Prints short debug lines before pattern verify (expected DMA path,
+	  raw 32-bit preview of first RX words). Enable while chasing hardware
+	  or wiring issues; leave off for quiet logs.
+
+config I2S_EFR32_TEST_LOOPBACK_TRACE
+	bool "Dense printk in loopback tests (hex + raw u32 + stride hints)"
+	depends on I2S_EFR32_TEST_LOOPBACK
+	default n
+	help
+	  Large dumps on the UART: extended RX/TX hex, raw memory as uint32_t,
+	  and halfword/byte stride hints. For local debug only.
+
+config I2S_EFR32_TEST_FRAME_CLK_HZ
+	int "Frame clock used by tests (Hz)"
+	default 16000
+	help
+	  The driver rejects frame clocks below 8 kHz, so 8000 is the
+	  practical minimum. Pick something the on-board clock tree can
+	  divide down to a small CLKDIV error -- 16 kHz with a 76.8 MHz
+	  HFRCODPLL gives an exact divider for 16-bit stereo.
+
+menu "Unity test runner output"
+
+config I2S_EFR32_TEST_VERBOSE
+	bool "Verbose output (-v): print TEST(group, name) PASS for each test"
+	help
+	  Equivalent to passing "-v" to UnityMain. Prints one line per test
+	  with the group and case name, instead of a single "." per pass.
+	  Recommended when developing or triaging a failure.
+
+config I2S_EFR32_TEST_SILENT
+	bool "Silent output (-s): only print failures and the summary"
+	depends on !I2S_EFR32_TEST_VERBOSE
+	help
+	  Equivalent to passing "-s" to UnityMain. Suppresses the "." per
+	  pass; only failed assertions and the final totals are printed.
+	  Useful for CI logs you only ever read on failure.
+
+config I2S_EFR32_TEST_GROUP_FILTER
+	string "Only run TEST_GROUPs whose name contains this substring"
+	default ""
+	help
+	  Equivalent to passing "-g <value>" to UnityMain. Empty string
+	  means "run every group". Example: "i2s_efr32_clock" runs only
+	  the clock group.
+
+config I2S_EFR32_TEST_NAME_FILTER
+	string "Only run TEST cases whose name contains this substring"
+	default ""
+	help
+	  Equivalent to passing "-n <value>" to UnityMain. Empty string
+	  means "run every case in the selected group(s)".
+
+config I2S_EFR32_TEST_REPEAT
+	int "Repeat the whole suite N times"
+	default 1
+	range 1 1000
+	help
+	  Equivalent to passing "-r <N>" to UnityMain. Useful for stress
+	  testing or chasing intermittent failures. 1 = run once.
+
+endmenu

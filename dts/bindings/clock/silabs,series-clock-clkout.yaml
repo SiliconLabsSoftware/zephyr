@@ -1,0 +1,69 @@
+# Copyright (c) 2026 Silicon Laboratories Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+title: Silicon Labs Series 2 CMU CLKOUT (MCO)
+
+description: |
+  A single CMU CLKOUT output (MCO), declared as a child of a
+  "silabs,series-clock" (cmu) node.
+
+  The clock referenced by "clocks" is routed to a GPIO pin. The pin itself is
+  configured through the parent cmu node's pinctrl-0 using the CMU_CLKOUTx_Pyy
+  pinctrl signals, so "reg" (the CLKOUT output index 0, 1 or 2) must match the
+  CMU_CLKOUTx signal selected in pinctrl.
+
+  Example (MCLK = SYSCLK / 4 = 19.2 MHz on CLKOUT2 / PB0):
+
+      &pinctrl {
+          clkout_default: clkout_default {
+              group0 {
+                  pins = <CMU_CLKOUT2_PB0>;
+                  drive-push-pull;
+              };
+          };
+      };
+
+      &cmu {
+          #address-cells = <1>;
+          #size-cells = <0>;
+          pinctrl-0 = <&clkout_default>;
+          pinctrl-names = "default";
+
+          clkout@2 {
+              reg = <2>;
+              clocks = <&exportclk>;
+              clock-div = <4>;
+          };
+      };
+
+compatible: "silabs,series-clock-clkout"
+
+include: [base.yaml]
+
+properties:
+  reg:
+    required: true
+    description: CLKOUT output index (0, 1 or 2).
+
+  "#clock-cells":
+    type: int
+    const: 0
+    description: |
+      This node is also a clock provider so a consumer (for example the I2S
+      driver for codec MCLK) can gate the output at runtime via
+      clock_control_on()/clock_control_off().
+
+  clocks:
+    type: phandle-array
+    required: true
+    description: |
+      Clock source routed to the CLKOUT pin. Reference a CMU clock source node
+      (for example &hfxo, &hfrcodpll, &lfxo, &lfrco) or &exportclk to use the
+      divided HFEXPCLK (EXPORTCLK) branch.
+
+  clock-div:
+    type: int
+    default: 1
+    description: |
+      EXPORTCLK (HFEXPCLK) prescaler, 1..32. Only applied when "clocks" points
+      to the exportclk node. Output frequency = source / clock-div.

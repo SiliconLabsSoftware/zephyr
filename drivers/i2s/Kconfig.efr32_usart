@@ -1,0 +1,32 @@
+# Copyright (c) 2026 Silicon Laboratories Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig I2S_SILABS_EFR32_USART
+	bool "Silicon Labs EFR32 USART I2S (Series 2)"
+	default y
+	depends on DT_HAS_SILABS_EFR32_USART_I2S_ENABLED
+	depends on DT_HAS_SILABS_LDMA_ENABLED
+	depends on CLOCK_CONTROL
+	depends on DMA
+	select PINCTRL
+	select DMA_SILABS_LDMA
+	select SILABS_SISDK_USART
+	select SILABS_SISDK_PRS
+	help
+	  I2S over USART synchronous mode with I2SCTRL enabled (EFR32xG2x and
+	  similar). Audio data is transferred using the SoC LDMA controller
+	  (requires ``dmas`` / ``dma-names`` on the USART I2S devicetree node).
+
+if I2S_SILABS_EFR32_USART
+
+config I2S_SILABS_EFR32_USART_TX_BLOCK_COUNT
+	int "TX queue depth (memory blocks)"
+	default 4
+	range 2 16
+
+config I2S_SILABS_EFR32_USART_RX_BLOCK_COUNT
+	int "RX queue depth (memory blocks)"
+	default 4
+	range 2 16
+
+endif # I2S_SILABS_EFR32_USART

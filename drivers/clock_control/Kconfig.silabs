@@ -8,3 +8,5 @@ config CLOCK_CONTROL_SILABS_SERIES
 	select SILABS_SISDK_CLOCK_MANAGER
 	help
 	  Enable Silicon Labs Series 2+ Clock Management Unit clock control driver.
+	  This driver also configures CMU CLKOUT (MCO) outputs declared as
+	  "silabs,series-clock-clkout" children of the cmu node.
