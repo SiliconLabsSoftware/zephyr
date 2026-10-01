@@ -51,6 +51,13 @@ static const struct flash_parameters *flash_siwx91x_get_parameters(const struct 
 	return &cfg->flash_parameters;
 }
 
+static int flash_siwx91x_get_size(const struct device *dev, uint64_t *size)
+{
+    const struct siwx91x_config *cfg = dev->config;
+    *size = cfg->size;  /* already set from DT_REG_SIZE — 8 MB */
+    return 0;
+}
+
 static int flash_siwx91x_read(const struct device *dev, off_t offset, void *buf, size_t len)
 {
 	const struct siwx91x_config *cfg = dev->config;
@@ -131,6 +138,7 @@ static DEVICE_API(flash, siwx91x_api) = {
 	.write = flash_siwx91x_write,
 	.erase = flash_siwx91x_erase,
 	.get_parameters = flash_siwx91x_get_parameters,
+	.get_size = flash_siwx91x_get_size,
 #ifdef CONFIG_FLASH_PAGE_LAYOUT
 	.page_layout = flash_siwx91x_page_layout,
 #endif
