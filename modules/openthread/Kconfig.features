@@ -100,6 +100,12 @@ config OPENTHREAD_COAP_OBSERVE
 config OPENTHREAD_COAPS
 	bool "Secure CoAP API support"
 	depends on OPENTHREAD_COAP
+	help
+	  Enable the OpenThread Secure CoAP API. Application CoAPS PSK uses
+	  DTLS_PSK_WITH_AES_128_CCM_8. OpenThread enables
+	  MBEDTLS_KEY_EXCHANGE_PSK_ENABLED when CoAP Secure is on; with the
+	  default security config this also selects the PSA algorithms needed
+	  (PSA_WANT_ALG_TLS12_PSK_TO_MS and PSA_WANT_KEY_TYPE_DERIVE).
 
 config OPENTHREAD_COMMISSIONER
 	bool "Commissioner functions support"
